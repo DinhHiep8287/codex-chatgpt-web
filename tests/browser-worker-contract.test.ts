@@ -4037,6 +4037,14 @@ test("the launcher helper transport carries MCP progress into the out-of-process
   expect(helper).toMatch(/externalProgress: progress/);
 });
 
+test("scoped text turns bind their first tab for retained project conversations", () => {
+  const helper = readFileSync("src/adapters/chatgpt-web/browser-helper-main.ts", "utf8");
+  const textTurn = helper.slice(helper.indexOf("async function textTurn("));
+  expect(textTurn).toContain("nativeConnector: true");
+  expect(textTurn).toContain("retainConversation: true");
+  expect(textTurn).toContain("conversationKey: message.conversationKey");
+});
+
 test("both response loops check explicit Stopped thinking before acknowledging further MCP work", () => {
   const worker = readFileSync("src/adapters/chatgpt-web/browser-worker.ts", "utf8");
   for (const method of ["private async waitForMultipartAcknowledgement(", "private async runBrowserTurn("]) {

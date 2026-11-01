@@ -437,6 +437,7 @@ async function textTurn(message: TextTurnMessage): Promise<void> {
       modelFamily: "6",
       reasoning: message.effort,
       capabilities,
+      nativeConnector: true,
       prepare: prepared,
       prepareResume: prepared,
       retainConversation: true,
