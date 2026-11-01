@@ -34,8 +34,12 @@ export const CHATGPT_EFFORT_SLIDER_MAX_OPTIONS = 6;
 
 // 2026-10-28 (#921): separate named rows beside GPT-6.1 and Default.
 const NAMED_GPT6_ROWS = {
-  sol: /^GPT[-\s]?6(?:\.1)?\s+Sol$/i,
-  astra: /^GPT[-\s]?6(?:\.1)?\s+Astra$/i,
+  sol: /^GPT[-\s]?6\s+Sol$/i,
+  astra: /^GPT[-\s]?6\s+Astra$/i,
+};
+const NAMED_GPT61_ROWS = {
+  sol: /^GPT[-\s]?6\.1\s+Sol$/i,
+  astra: /^GPT[-\s]?6\.1\s+Astra$/i,
 };
 // 2026-10-08 (388fca5), localized in 6.1.13: one row controls the whole family.
 // A match here is only a UI target. The caller still verifies version/name/effort.
@@ -50,6 +54,10 @@ export async function chatGptModelOption(menu: Locator, requested: {
       name: NAMED_GPT6_ROWS[requested.name], exact: true, includeHidden: true,
     });
     if (await named.count() > 0) return named;
+    const compatible = menu.getByRole("menuitemradio", {
+      name: NAMED_GPT61_ROWS[requested.name], exact: true, includeHidden: true,
+    });
+    if (await compatible.count() > 0) return compatible;
   }
   return menu.getByRole("menuitemradio", {
     name: requested.version === "5.6" ? GPT56_ROW : SHARED_GPT6_ROW,
