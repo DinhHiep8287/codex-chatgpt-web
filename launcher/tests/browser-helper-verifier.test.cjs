@@ -36,6 +36,26 @@ test("scoped text operation forwards only the bounded text payload", async (cont
   assert.deepEqual(result.value, { text: "{}" });
 });
 
+test("scoped text operation stops its helper when the caller cancels", async (context) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-browser-helper-cancel-"));
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const script = path.join(root, "helper.cjs");
+  fs.writeFileSync(script, `
+    const input = require("node:readline").createInterface({ input: process.stdin });
+    process.stdout.write(JSON.stringify({ type: "ready" }) + "\\n");
+    input.on("line", line => {
+      if (JSON.parse(line).type === "shutdown") process.exit(0);
+    });
+  `);
+  const controller = new AbortController();
+  const pending = runBrowserHelperOperation({
+    helper: { executable: process.execPath, script }, descriptorPath: "/runtime/launcher-browser.json",
+    appName: "Vietsub", operation: "text", signal: controller.signal, logger: { info() {} },
+  });
+  setTimeout(() => controller.abort(new Error("caller stopped")), 20);
+  await assert.rejects(pending, /caller stopped/);
+});
+
 test("launcher verification delegates exact connector selection to the browser helper protocol", async (context) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-browser-helper-verify-"));
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));

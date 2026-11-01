@@ -47,7 +47,7 @@ async function stopChild(child) {
   }
 }
 
-async function runBrowserHelperOperation({ helper, descriptorPath, appName, operation, useTemporaryChats = true, payload = {}, logger }) {
+async function runBrowserHelperOperation({ helper, descriptorPath, appName, operation, useTemporaryChats = true, payload = {}, logger, signal }) {
   if (!helper || typeof helper.executable !== "string" || typeof helper.script !== "string") {
     throw new Error("Browser helper verification command is invalid");
   }
@@ -75,13 +75,20 @@ async function runBrowserHelperOperation({ helper, descriptorPath, appName, oper
   errors.on("line", (line) => logger?.info("browser.connector_helper", { message: line.slice(0, 2_000) }));
 
   const result = new Promise((resolve, reject) => {
+    const onAbort = () => finish(signal.reason instanceof Error ? signal.reason : new Error("Browser helper operation was cancelled"));
     const finish = (error, value) => {
       if (completed) return;
       completed = true;
       if (timer) clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
       if (error) reject(error);
       else resolve(value);
     };
+    if (signal?.aborted) {
+      finish(signal.reason instanceof Error ? signal.reason : new Error("Browser helper operation was cancelled"));
+      return;
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
     // A callback on write() does not consume the stream's separate `error` event. On Windows,
     // closing the helper's read side can therefore surface ERROR_BROKEN_PIPE/EOF as an uncaught
     // exception in Electron's main process even when the write promise is already handled.

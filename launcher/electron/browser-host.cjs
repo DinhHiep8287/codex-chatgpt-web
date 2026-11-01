@@ -3130,7 +3130,7 @@ class BrowserHost {
     return { ok: true, ...evidence };
   }
 
-  async textTurn({ prompt, effort, conversationKey, requireRetainedConversation = false }) {
+  async textTurn({ prompt, effort, conversationKey, requireRetainedConversation = false }, signal) {
     requireAutomaticBrowserInspection(this, "scoped text turn");
     if (typeof prompt !== "string" || prompt.length < 1 || prompt.length > 120_000) {
       throw new Error("Scoped text prompt is invalid");
@@ -3150,6 +3150,7 @@ class BrowserHost {
       useTemporaryChats: false,
       payload: { prompt, effort, conversationKey, requireRetainedConversation },
       logger: this.logger,
+      signal,
     });
     const text = result?.value?.text;
     if (typeof text !== "string" || !text.trim()) {

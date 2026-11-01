@@ -132,7 +132,18 @@ class BrowserControlServer {
         }
         const host = this.getBrowserHost();
         if (!host) throw new Error("browser host is not ready");
-        const result = await host.textTurn(body);
+        const operation = new AbortController();
+        const onClose = () => {
+          if (!response.writableFinished) operation.abort(new Error("Scoped text-turn caller disconnected"));
+        };
+        response.once("close", onClose);
+        let result;
+        try {
+          if (response.destroyed) onClose();
+          result = await host.textTurn(body, operation.signal);
+        } finally {
+          response.off("close", onClose);
+        }
         writeJson(response, 200, { ok: true, ...result });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

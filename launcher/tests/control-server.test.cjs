@@ -55,6 +55,35 @@ test("scoped text capability cannot call launcher-control routes", async (contex
   assert.equal(fs.existsSync(descriptorPath), false);
 });
 
+test("disconnecting a scoped text request cancels the browser operation", async () => {
+  let cancelled;
+  const host = {
+    textTurn(_body, signal) {
+      cancelled = new Promise(resolve => signal.addEventListener("abort", resolve, { once: true }));
+      return new Promise(() => {});
+    },
+  };
+  const server = await new BrowserControlServer({
+    logger: { info() {}, warn() {}, error() {} }, getBrowserHost: () => host, getPreferences: () => ({}),
+  }).start();
+  const scoped = server.textDescriptor();
+  const controller = new AbortController();
+  try {
+    const pending = fetch(`${scoped.endpoint}/v1/text-turn`, {
+      method: "POST", signal: controller.signal,
+      headers: { authorization: `Bearer ${scoped.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "Translate.", effort: "low", conversationKey: "a".repeat(64) }),
+    });
+    while (!cancelled) await new Promise(resolve => setTimeout(resolve, 5));
+    controller.abort();
+    await assert.rejects(pending, { name: "AbortError" });
+    await cancelled;
+  } finally {
+    controller.abort();
+    await server.close();
+  }
+});
+
 test("live task progress is owner-bound, preserves elapsed time, and clears on release", async () => {
   const tab = { id: "task-one", traceId: "trace-one", helperPid: process.pid, status: "running", interactionMode: "automatic" };
   const other = { ...tab, id: "task-two", traceId: "trace-two", helperPid: process.pid + 1 };
