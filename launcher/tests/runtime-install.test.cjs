@@ -292,6 +292,39 @@ test("packaged runtime transactionally repairs an incomplete installed bundle", 
   }
 });
 
+test("a locked previous runtime does not crash a validated replacement", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-web-gpt-runtime-locked-previous-"));
+  const resourcesPath = runtimeFixture(root);
+  const coreHome = path.join(root, "core-home");
+  const app = { isPackaged: true, getVersion: () => "0.2.0" };
+  const originalRemove = fs.rmSync;
+  try {
+    const installed = ensurePackagedRuntime({ app, coreHome, resourcesPath });
+    fs.writeFileSync(path.join(installed, "corrupt.partial"), "force replacement");
+    fs.rmSync = (target, options) => {
+      if (String(target).includes(".previous-")) {
+        const error = new Error("locked by orphaned broker");
+        error.code = "EPERM";
+        throw error;
+      }
+      return originalRemove(target, options);
+    };
+
+    assert.equal(ensurePackagedRuntime({ app, coreHome, resourcesPath }), installed);
+    assert.equal(fs.existsSync(path.join(installed, "corrupt.partial")), false);
+    assert.equal(validateRuntimeBundle(installed, {
+      version: "0.2.0", platform: process.platform, arch: process.arch,
+    }), installed);
+    assert.equal(
+      fs.readdirSync(path.dirname(installed)).some(name => name.includes(".previous-")),
+      true,
+    );
+  } finally {
+    fs.rmSync = originalRemove;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("failed candidate validation preserves the previous validated runtime", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-web-gpt-runtime-preserve-"));
   const resourcesPath = runtimeFixture(root);

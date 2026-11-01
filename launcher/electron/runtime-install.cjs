@@ -274,8 +274,11 @@ function ensurePackagedRuntime({ app, coreHome, resourcesPath }) {
       throw error;
     }
     if (previousMoved) {
-      fs.rmSync(previous, { recursive: true, force: true });
       previousMoved = false;
+      // An installer can leave the previous runtime locked by an orphaned broker.
+      // The new destination is already validated, so stale-backup cleanup must not
+      // turn a successful upgrade into a launcher startup crash loop.
+      try { fs.rmSync(previous, { recursive: true, force: true }); } catch {}
     }
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
