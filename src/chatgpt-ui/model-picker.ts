@@ -33,10 +33,13 @@ export const CHATGPT_EFFORT_SLIDER_CONTAINER_SELECTOR = Object.values(CHATGPT_SL
 export const CHATGPT_EFFORT_SLIDER_MAX_OPTIONS = 6;
 
 // 2026-10-28 (#921): separate named rows beside GPT-6.1 and Default.
-const NAMED_GPT6_ROWS = { sol: /^GPT[-\s]?6\s+Sol$/i, astra: /^GPT[-\s]?6\s+Astra$/i };
+const NAMED_GPT6_ROWS = {
+  sol: /^GPT[-\s]?6(?:\.1)?\s+Sol$/i,
+  astra: /^GPT[-\s]?6(?:\.1)?\s+Astra$/i,
+};
 // 2026-10-08 (388fca5), localized in 6.1.13: one row controls the whole family.
 // A match here is only a UI target. The caller still verifies version/name/effort.
-const SHARED_GPT6_ROW = /^(?:Latest|最新|최신|(?:GPT[-\s]?)?6(?:\s+Astra)?(?:\s+Pro)?)$/i;
+const SHARED_GPT6_ROW = /^(?:Latest|最新|최신|(?:GPT[-\s]?)?6(?:\.1)?(?:\s+Astra)?(?:\s+Pro)?)$/i;
 const GPT56_ROW = /^GPT[-\s]?5\.6\s+Sol(?:\s+Pro)?$/i;
 
 export async function chatGptModelOption(menu: Locator, requested: {

@@ -7,6 +7,10 @@ export const CHATGPT_COMPOSER_VARIANTS = {
   lexical: '[data-testid="prompt-textarea"], #prompt-textarea, [contenteditable="true"][data-lexical-editor="true"]',
   // 2026-09-25 (2933410): markdown editor owned by the composer form.
   markdown: 'form[data-chatgpt-composer] [data-composer-markdown][contenteditable="true"][role="textbox"]',
+  // 2026-11-01: the composer form no longer carries data-chatgpt-composer, but it
+  // still owns the structural reasoning trigger.  Scope the editor to that form
+  // so unrelated markdown editors remain excluded without relying on labels.
+  markdownReasoningForm: 'form:has([data-composer-navigation-target="reasoning"]) [data-composer-markdown][contenteditable="true"][role="textbox"]',
 } as const;
 export const CHATGPT_COMPOSER_SELECTOR = Object.values(CHATGPT_COMPOSER_VARIANTS).join(", ");
 /** Resolve only inside the verified composer's form; multiple submitters are an error. */

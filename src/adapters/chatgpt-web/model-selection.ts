@@ -69,7 +69,10 @@ export function chatGptModelFamilyMatches(
     const state = parseChatGptModelAnnouncement(text);
     return state ? [state] : [];
   });
-  return states.length > 0 && states.every(state => state.version === family
+  const versionMatches = (version: string): boolean => family === "6"
+    ? version === "6" || version === "6.1"
+    : version === family;
+  return states.length > 0 && states.every(state => versionMatches(state.version)
     && (!state.name || state.name === expectedName)
     && (state.mode.toLowerCase() === expectedMode
       || family === "6" && effort === "max" && state.name === "astra" && /^max$/i.test(state.mode)));
