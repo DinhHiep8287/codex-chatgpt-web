@@ -4040,9 +4040,20 @@ test("the launcher helper transport carries MCP progress into the out-of-process
 test("scoped text turns bind their first tab for retained project conversations", () => {
   const helper = readFileSync("src/adapters/chatgpt-web/browser-helper-main.ts", "utf8");
   const textTurn = helper.slice(helper.indexOf("async function textTurn("));
-  expect(textTurn).toContain("nativeConnector: true");
+  expect(textTurn).not.toContain("nativeConnector: true");
   expect(textTurn).toContain("retainConversation: true");
   expect(textTurn).toContain("conversationKey: message.conversationKey");
+});
+
+test("plain retained turns do not acquire a native connector identity", () => {
+  const worker = readFileSync("src/adapters/chatgpt-web/browser-worker.ts", "utf8");
+  const runExclusive = worker.slice(worker.indexOf("private async runExclusive("));
+  const identity = runExclusive.slice(
+    runExclusive.indexOf("...(turn.conversationKey"),
+    runExclusive.indexOf("...(turn.requireRetainedConversation"),
+  );
+  expect(identity).toContain("turn.nativeConnector || turn.capabilities.localToolsEnabled");
+  expect(identity).not.toContain("turn.requireRetainedConversation");
 });
 
 test("both response loops check explicit Stopped thinking before acknowledging further MCP work", () => {
