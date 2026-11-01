@@ -3130,6 +3130,34 @@ class BrowserHost {
     return { ok: true, ...evidence };
   }
 
+  async textTurn({ prompt, effort, conversationKey, requireRetainedConversation = false }) {
+    requireAutomaticBrowserInspection(this, "scoped text turn");
+    if (typeof prompt !== "string" || prompt.length < 1 || prompt.length > 120_000) {
+      throw new Error("Scoped text prompt is invalid");
+    }
+    if (!["low", "medium", "high"].includes(effort)) {
+      throw new Error("Scoped text effort is invalid");
+    }
+    if (!/^[a-f0-9]{64}$/.test(conversationKey)) {
+      throw new Error("Scoped text conversation key is invalid");
+    }
+    await this.waitForSurfaceReady();
+    const result = await this.runBrowserHelperOperation({
+      helper: this.helper,
+      descriptorPath: this.descriptorPath,
+      appName: this.connectorName(),
+      operation: "text",
+      useTemporaryChats: false,
+      payload: { prompt, effort, conversationKey, requireRetainedConversation },
+      logger: this.logger,
+    });
+    const text = result?.value?.text;
+    if (typeof text !== "string" || !text.trim()) {
+      throw new Error("Browser helper returned an invalid scoped text response");
+    }
+    return { text };
+  }
+
   async verifyConnector(appName) {
     requireAutomaticBrowserInspection(this, "ChatGPT connector verification");
     return await this.withManualOperation("connector verification", () => this.runConnectorVerification(appName));

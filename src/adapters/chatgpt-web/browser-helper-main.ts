@@ -4,7 +4,7 @@ import { stdin, stderr, stdout } from "node:process";
 import type { CodexProviderConfig } from "../../types";
 import { ChatGptBrowserWorker, closeChatGptBrowserWorkers, type BrowserTurn } from "./browser-worker";
 import { ChatGptCompactionHandoffAccepted, ChatGptWebAdapterError } from "./adapter-error";
-import type { ChatGptWebCapabilities } from "./model";
+import { CHATGPT_WEB_MODEL_ID, type ChatGptWebCapabilities } from "./model";
 import { createProcessLineWriter } from "./process-line-writer";
 import { createBrowserHelperPromptSelection } from "./browser-helper-prompt-selection";
 import { isChatGptWebMultipartPartCount, type CompiledChatGptWebPrompt } from "./prompt";
@@ -68,9 +68,19 @@ interface LimitsMessage {
   config: VerifyMessage["config"];
 }
 
+interface TextTurnMessage {
+  type: "text";
+  id: string;
+  config: VerifyMessage["config"];
+  prompt: string;
+  effort: "low" | "medium" | "high";
+  conversationKey: string;
+  requireRetainedConversation?: boolean;
+}
+
 type MaintenanceMessage = VerifyMessage | InspectMessage | SmokeMessage | LimitsMessage;
 type InputMessage = RunMessage
-  | MaintenanceMessage
+  | MaintenanceMessage | TextTurnMessage
   | { type: "prepared_selected_ack"; id: string; prepared: CompiledChatGptWebPrompt }
   | { type: "send_activation_ack"; id: string }
   | { type: "completion_fence_begin_ack"; id: string; requestId: number; revision: number | null }
@@ -357,7 +367,7 @@ async function verify(message: VerifyMessage): Promise<void> {
   }
 }
 
-function maintenanceWorker(message: MaintenanceMessage): ChatGptBrowserWorker {
+function maintenanceWorker(message: MaintenanceMessage | TextTurnMessage): ChatGptBrowserWorker {
   if (!/^[A-Za-z0-9_-]{6,128}$/.test(message.id)) {
     throw new Error("Browser helper maintenance identity is invalid");
   }
@@ -386,6 +396,56 @@ async function maintain(message: InspectMessage | SmokeMessage | LimitsMessage):
       : message.type === "limits" ? await worker.inspectLimitsPlan()
       : await worker.smokeTest(abortController.signal);
     writeProtocol({ type: "result", id: message.id, value });
+  } catch (error) {
+    writeProtocol({
+      type: "error",
+      id: message.id,
+      name: error instanceof Error ? error.name : "Error",
+      message: error instanceof Error ? error.message : String(error),
+    });
+  } finally {
+    abortControllers.delete(message.id);
+  }
+}
+
+async function textTurn(message: TextTurnMessage): Promise<void> {
+  if (abortControllers.has(message.id)) throw new Error(`Browser helper text turn already exists: ${message.id}`);
+  if (typeof message.prompt !== "string" || message.prompt.length < 1 || message.prompt.length > 120_000) {
+    throw new Error("Browser helper text prompt is invalid");
+  }
+  if (!/^[a-f0-9]{64}$/.test(message.conversationKey)) {
+    throw new Error("Browser helper text conversation key is invalid");
+  }
+  if (!["low", "medium", "high"].includes(message.effort)) {
+    throw new Error("Browser helper text effort is invalid");
+  }
+  const abortController = new AbortController();
+  abortControllers.set(message.id, abortController);
+  try {
+    const worker = maintenanceWorker(message);
+    const capabilities: ChatGptWebCapabilities = {
+      solAvailable: true,
+      extraHighAvailable: false,
+      proAvailable: false,
+      localToolsEnabled: false,
+    };
+    const prompt = message.prompt;
+    const prepared = async () => ({ text: prompt, images: [], release: () => {} });
+    const response = await worker.run({
+      traceId: message.id,
+      modelId: CHATGPT_WEB_MODEL_ID,
+      modelFamily: "6",
+      reasoning: message.effort,
+      capabilities,
+      prepare: prepared,
+      prepareResume: prepared,
+      retainConversation: true,
+      requireRetainedConversation: message.requireRetainedConversation === true,
+      conversationKey: message.conversationKey,
+      abortSignal: abortController.signal,
+      onTextDelta: () => {},
+    });
+    writeProtocol({ type: "result", id: message.id, value: { text: response } });
   } catch (error) {
     writeProtocol({
       type: "error",
@@ -508,6 +568,12 @@ input.on("line", line => {
     }));
   } else if (message.type === "inspect" || message.type === "smoke" || message.type === "limits") {
     void maintain(message).catch(error => writeProtocol({
+      type: "error",
+      id: message.id,
+      message: error instanceof Error ? error.message : String(error),
+    }));
+  } else if (message.type === "text") {
+    void textTurn(message).catch(error => writeProtocol({
       type: "error",
       id: message.id,
       message: error instanceof Error ? error.message : String(error),

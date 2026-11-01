@@ -1,5 +1,7 @@
 const { createServer } = require("node:http");
 const { randomBytes, timingSafeEqual } = require("node:crypto");
+const fs = require("node:fs");
+const path = require("node:path");
 const { releaseRetainedConversation } = require("./retained-turn-release.cjs");
 
 const MAX_BODY_BYTES = 16 * 1024;
@@ -38,13 +40,15 @@ function writeJson(response, status, body) {
 }
 
 class BrowserControlServer {
-  constructor({ logger, getBrowserHost, getPreferences, resolveProxy, limits }) {
+  constructor({ logger, getBrowserHost, getPreferences, resolveProxy, limits, textDescriptorPath }) {
     this.logger = logger;
     this.getBrowserHost = getBrowserHost;
     this.getPreferences = getPreferences;
     this.resolveProxy = resolveProxy;
     this.limits = limits;
+    this.textDescriptorPath = textDescriptorPath;
     this.token = randomBytes(32).toString("base64url");
+    this.textToken = randomBytes(32).toString("base64url");
     this.port = 0;
     this.server = createServer((request, response) => {
       void this.handle(request, response).catch((error) => {
@@ -82,6 +86,12 @@ class BrowserControlServer {
       });
     });
     this.logger.info("browser.control_started", { port: this.port });
+    if (this.textDescriptorPath) {
+      fs.mkdirSync(path.dirname(this.textDescriptorPath), { recursive: true, mode: 0o700 });
+      const temporary = `${this.textDescriptorPath}.${process.pid}.tmp`;
+      fs.writeFileSync(temporary, `${JSON.stringify(this.textDescriptor(), null, 2)}\n`, { mode: 0o600 });
+      fs.renameSync(temporary, this.textDescriptorPath);
+    }
     return this;
   }
 
@@ -90,7 +100,47 @@ class BrowserControlServer {
     return { endpoint: `http://127.0.0.1:${this.port}`, token: this.token };
   }
 
+  textDescriptor() {
+    if (!this.port) throw new Error("Browser control server is not started");
+    return {
+      schemaVersion: 1,
+      endpoint: `http://127.0.0.1:${this.port}`,
+      token: this.textToken,
+      capabilities: ["text-turn", "retained-conversation", "effort-low-medium-high"],
+    };
+  }
+
   async handle(request, response) {
+    if (request.method === "POST" && request.url === "/v1/text-turn") {
+      if (!secureTokenMatches(this.textToken, request.headers.authorization)) {
+        writeJson(response, 401, { error: "unauthorized" });
+        return;
+      }
+      try {
+        const body = await readJson(request, 256 * 1024);
+        if (!body || typeof body !== "object") throw new Error("text turn body is invalid");
+        if (typeof body.prompt !== "string" || body.prompt.length < 1 || body.prompt.length > 120_000) {
+          throw new Error("text turn prompt is invalid");
+        }
+        if (!["low", "medium", "high"].includes(body.effort)) throw new Error("text turn effort is invalid");
+        if (typeof body.conversationKey !== "string" || !/^[a-f0-9]{64}$/.test(body.conversationKey)) {
+          throw new Error("text turn conversation key is invalid");
+        }
+        if (body.requireRetainedConversation !== undefined
+          && typeof body.requireRetainedConversation !== "boolean") {
+          throw new Error("text turn retained flag is invalid");
+        }
+        const host = this.getBrowserHost();
+        if (!host) throw new Error("browser host is not ready");
+        const result = await host.textTurn(body);
+        writeJson(response, 200, { ok: true, ...result });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn("browser.text_turn_rejected", { message });
+        writeJson(response, 400, { error: message });
+      }
+      return;
+    }
     if (!secureTokenMatches(this.token, request.headers.authorization)) {
       writeJson(response, 401, { error: "unauthorized" });
       return;
@@ -385,6 +435,14 @@ class BrowserControlServer {
   }
 
   async close() {
+    if (this.textDescriptorPath) {
+      try {
+        const current = JSON.parse(fs.readFileSync(this.textDescriptorPath, "utf8"));
+        if (current?.token === this.textToken) fs.rmSync(this.textDescriptorPath, { force: true });
+      } catch (error) {
+        if (error?.code !== "ENOENT") throw error;
+      }
+    }
     if (!this.server.listening) return;
     await new Promise((resolve, reject) => {
       this.server.close((error) => error ? reject(error) : resolve());

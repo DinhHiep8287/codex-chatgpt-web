@@ -54,7 +54,7 @@ async function runBrowserHelperOperation({ helper, descriptorPath, appName, oper
   if (typeof descriptorPath !== "string" || !descriptorPath || typeof appName !== "string" || !appName) {
     throw new Error("Browser helper verification config is invalid");
   }
-  if (!["verify", "inspect", "smoke", "limits"].includes(operation)) {
+  if (!["verify", "inspect", "smoke", "limits", "text"].includes(operation)) {
     throw new Error(`Unsupported browser helper operation: ${String(operation)}`);
   }
   const id = `${operation}-${randomBytes(12).toString("hex")}`;
@@ -139,7 +139,7 @@ async function runBrowserHelperOperation({ helper, descriptorPath, appName, oper
     )));
     timer = setTimeout(
       () => finish(new Error(`Browser helper ${operation} timed out`)),
-      BROWSER_HELPER_OPERATION_TIMEOUT_MS,
+      operation === "text" ? 30 * 60_000 : BROWSER_HELPER_OPERATION_TIMEOUT_MS,
     );
   });
 

@@ -55,6 +55,7 @@ const LAUNCHER_PROFILE = resolveLauncherProfile({ appData: app.getPath("appData"
 const IS_DEV_PROFILE = LAUNCHER_PROFILE.kind === DEVELOPMENT_PROFILE;
 const CORE_HOME = LAUNCHER_PROFILE.coreHome;
 const BROWSER_DESCRIPTOR_PATH = path.join(CORE_HOME, "runtime", "launcher-browser.json");
+const TEXT_CLIENT_DESCRIPTOR_PATH = path.join(CORE_HOME, "runtime", "vietsub-text-client.json");
 const BROWSER_HELPER_PATH = app.isPackaged
   ? path.join(process.resourcesPath, "runtime", "app", "browser-helper.cjs")
   : path.join(SOURCE_ROOT, ".launcher-runtime", "browser-helper.cjs");
@@ -1207,6 +1208,7 @@ async function start() {
     getPreferences: () => syncBrowserPreferences(stateStore, runtimeHost.runtimeConfigSnapshot().config),
     resolveProxy: url => session.fromPartition(LAUNCHER_PROFILE.browserPartition).resolveProxy(url),
     limits: limitsController,
+    textDescriptorPath: TEXT_CLIENT_DESCRIPTOR_PATH,
   }).start();
   runtimeSupervisor = new RuntimeSupervisor({
     app,

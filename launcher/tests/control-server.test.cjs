@@ -3,6 +3,58 @@ const assert = require("node:assert/strict");
 const { BrowserHost } = require("../electron/browser-host.cjs");
 const { BrowserControlServer } = require("../electron/control-server.cjs");
 
+test("scoped text capability cannot call launcher-control routes", async (context) => {
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const path = require("node:path");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-text-capability-"));
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const descriptorPath = path.join(root, "vietsub-text-client.json");
+  const calls = [];
+  const host = {
+    async textTurn(body) {
+      calls.push(body);
+      return { text: "bounded response" };
+    },
+  };
+  const server = await new BrowserControlServer({
+    logger: { info() {}, warn() {}, error() {} },
+    getBrowserHost: () => host,
+    getPreferences: () => ({}),
+    textDescriptorPath: descriptorPath,
+  }).start();
+  const control = server.descriptor();
+  const scoped = JSON.parse(fs.readFileSync(descriptorPath, "utf8"));
+  const body = {
+    prompt: "Translate five cues.", effort: "low", conversationKey: "a".repeat(64),
+  };
+  try {
+    const denied = await fetch(`${control.endpoint}/v1/turn/start`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${scoped.token}`, "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    assert.equal(denied.status, 401);
+    const wrong = await fetch(`${control.endpoint}/v1/text-turn`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${control.token}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    assert.equal(wrong.status, 401);
+    const accepted = await fetch(`${control.endpoint}/v1/text-turn`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${scoped.token}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    assert.equal(accepted.status, 200);
+    assert.deepEqual(await accepted.json(), { ok: true, text: "bounded response" });
+    assert.deepEqual(calls, [body]);
+  } finally {
+    await server.close();
+  }
+  assert.equal(fs.existsSync(descriptorPath), false);
+});
+
 test("live task progress is owner-bound, preserves elapsed time, and clears on release", async () => {
   const tab = { id: "task-one", traceId: "trace-one", helperPid: process.pid, status: "running", interactionMode: "automatic" };
   const other = { ...tab, id: "task-two", traceId: "trace-two", helperPid: process.pid + 1 };
