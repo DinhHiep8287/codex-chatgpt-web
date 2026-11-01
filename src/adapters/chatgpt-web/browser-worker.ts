@@ -898,7 +898,13 @@ export const browserStageTimeouts = {
   browserPage: 60_000,
   newChatPreparation: 150_000,
   effortSelection: 120_000,
-  promptAttachment: 60_000,
+  // Attachment first waits on `activeComposer` (up to 60s) and then on one plain-text
+  // insertion plus an exact readback of the entire prompt. An audit prompt carries the
+  // translated block back to the model, so it is materially longer than the translate
+  // prompt for the same block. A 60s budget cut real audit turns off mid-insertion right
+  // after a chat switch, which a launcher-side retry could not recover because the
+  // composer had already been cleared.
+  promptAttachment: 180_000,
   fileAttachment: 120_000,
   // Inline prompts can be as large as Bigger Context stages. Both need the same bounded
   // acceptance budget; transport selection must not cut off an already submitted large prompt.
@@ -3874,15 +3880,19 @@ export class ChatGptBrowserWorker {
 
   private async insertPromptText(page: Page, text: string, abortSignal?: AbortSignal): Promise<void> {
     throwIfPromptAttachmentAborted(abortSignal);
-    const composer = await this.activeComposer(page, 30_000, abortSignal);
+    // A chat switch re-hydrates the whole composer tree; the fresh document can stay
+    // composer-less well past 30s on a slow turn, so the discovery budget must exceed the
+    // time a reload actually needs rather than failing before insertion is even attempted.
+    const composer = await this.activeComposer(page, 60_000, abortSignal);
     await composer.focus({ signal: abortSignal, timeout: CHATGPT_CONNECTOR_ACTION_TIMEOUT_MS });
     // CDP Input.insertText is interpreted as live typing by ChatGPT's Lexical plugins. On a large
     // JSON transport it can turn literal Markdown backticks into rich code nodes, remove the
     // delimiters from textContent, and leave the next insertion outside the intended block. The
     // browser's plain-text editing command updates the same focused contenteditable atomically
     // without running those Markdown shortcuts. Exact readback below remains the authority.
+    // The budget scales with the prompt because the readback tokenises the whole payload.
     const inserted = await composer.evaluate(insertPlainTextIntoComposer, text, {
-      timeout: 20_000,
+      timeout: Math.min(120_000, Math.max(20_000, text.length)),
       signal: abortSignal,
     });
     throwIfPromptAttachmentAborted(abortSignal);
@@ -5327,6 +5337,10 @@ export class ChatGptBrowserWorker {
       let submissionBaseline = await this.captureSubmissionBaseline(page, finalPrompt, acknowledgedStages, prepared.turnToken);
       let catalogRefreshAvailable = mode.localTools && !reuseConversation && !prepared.multipart;
       const connectorAttemptBudget: ChatGptConnectorAttemptBudget = { triggerAttempts: 0 };
+      // A stage budget can still expire if the launcher browser is momentarily starved. The
+      // composer has not been submitted at this point, so one retry with a fresh surface is
+      // safe: no message can have reached ChatGPT yet.
+      let attachmentTimeouts = 0;
       for (;;) {
         try {
           await this.runStage(
@@ -5355,7 +5369,39 @@ export class ChatGptBrowserWorker {
           );
           break;
         } catch (error) {
-          if (!(error instanceof ChatGptConnectorCatalogStaleError) || !catalogRefreshAvailable) throw error;
+          if (!(error instanceof ChatGptConnectorCatalogStaleError) || !catalogRefreshAvailable) {
+            if (
+              error instanceof Error
+              && error.message.startsWith("ChatGPT browser stage timed out: prompt_attachment")
+              && attachmentTimeouts < 2
+            ) {
+              attachmentTimeouts += 1;
+              console.info(`[chatgpt-web] browser turn ${turn.traceId} prompt_attachment retry ${attachmentTimeouts}`);
+              await diagnostics.capture(page, `prompt-attachment-timeout-retry-${attachmentTimeouts}`);
+              await this.runStage(
+                turn.traceId,
+                "prompt_attachment_retry_reload",
+                browserStageTimeouts.newChatPreparation,
+                async () => {
+                  await page.reload({ waitUntil: "domcontentloaded", timeout: 60_000 });
+                  await this.prepareChatSurface(
+                    page,
+                    checkpoint => diagnostics.capture(page, checkpoint),
+                    turn.abortSignal,
+                  );
+                  submissionBaseline = await this.captureSubmissionBaseline(
+                    page,
+                    finalPrompt,
+                    acknowledgedStages,
+                    prepared.turnToken,
+                  );
+                },
+              );
+              await new Promise(resolve => setTimeout(resolve, 2_000 * attachmentTimeouts));
+              continue;
+            }
+            throw error;
+          }
           catalogRefreshAvailable = false;
           await diagnostics.capture(page, "connector-catalog-stale");
           await this.runStage(

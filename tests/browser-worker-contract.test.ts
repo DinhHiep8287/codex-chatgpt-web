@@ -1279,8 +1279,10 @@ test("large Markdown-rich context uses one plain-text editing command before exa
 
   expect(calls[0]).toEqual(["fill", ""]);
   expect(calls.filter(call => call[0] === "evaluate")).toEqual([["evaluate", prompt]]);
+  // The insertion budget scales with the prompt because the exact readback walks the whole
+  // payload; this Markdown-rich prompt is far above the 120s ceiling, so it clamps there.
   expect(calls.filter(call => call[0] === "evaluateOptions")).toEqual([
-    ["evaluateOptions", { timeout: 20_000 }],
+    ["evaluateOptions", { timeout: 120_000 }],
   ]);
   expect(asserted).toBe(prompt);
 });
