@@ -84,6 +84,46 @@ test("disconnecting a scoped text request cancels the browser operation", async 
   }
 });
 
+test("scoped text capability accepts one digest-bound audit attachment", async (context) => {
+  const crypto = require("node:crypto");
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const path = require("node:path");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-text-attachment-"));
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const seen = [];
+  const server = await new BrowserControlServer({
+    logger: { info() {}, warn() {}, error() {} },
+    getBrowserHost: () => ({ async textTurn(body) { seen.push(body); return { text: "ok" }; } }),
+    getPreferences: () => ({}),
+    textDescriptorPath: path.join(root, "descriptor.json"),
+  }).start();
+  const scoped = server.textDescriptor();
+  const text = "1\t原文\tBản dịch";
+  const digest = crypto.createHash("sha256").update(text).digest("hex").slice(0, 16);
+  const body = {
+    prompt: "Audit file.", effort: "medium", conversationKey: "a".repeat(64),
+    attachment: { name: `longform-audit--${digest}.txt`, text },
+  };
+  try {
+    const accepted = await fetch(`${scoped.endpoint}/v1/text-turn`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${scoped.token}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    assert.equal(accepted.status, 200);
+    assert.deepEqual(seen, [body]);
+    const invalid = await fetch(`${scoped.endpoint}/v1/text-turn`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${scoped.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ ...body, attachment: { ...body.attachment, name: "longform-audit--0000000000000000.txt" } }),
+    });
+    assert.equal(invalid.status, 400);
+  } finally {
+    await server.close();
+  }
+});
+
 test("live task progress is owner-bound, preserves elapsed time, and clears on release", async () => {
   const tab = { id: "task-one", traceId: "trace-one", helperPid: process.pid, status: "running", interactionMode: "automatic" };
   const other = { ...tab, id: "task-two", traceId: "trace-two", helperPid: process.pid + 1 };

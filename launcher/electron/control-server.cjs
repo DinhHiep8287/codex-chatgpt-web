@@ -1,11 +1,13 @@
 const { createServer } = require("node:http");
-const { randomBytes, timingSafeEqual } = require("node:crypto");
+const { createHash, randomBytes, timingSafeEqual } = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { releaseRetainedConversation } = require("./retained-turn-release.cjs");
 
 const MAX_BODY_BYTES = 16 * 1024;
 const MAX_MANUAL_START_BODY_BYTES = 3 * 1024 * 1024;
+const MAX_TEXT_TURN_BODY_BYTES = 6 * 1024 * 1024;
+const MAX_TEXT_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const MANUAL_SENT_OBSERVER_TIMEOUT_MS = 35_000;
 
 function secureTokenMatches(expected, authorization) {
@@ -106,7 +108,7 @@ class BrowserControlServer {
       schemaVersion: 1,
       endpoint: `http://127.0.0.1:${this.port}`,
       token: this.textToken,
-      capabilities: ["text-turn", "retained-conversation", "effort-low-medium-high"],
+      capabilities: ["text-turn", "text-attachment", "retained-conversation", "effort-low-medium-high"],
     };
   }
 
@@ -117,7 +119,7 @@ class BrowserControlServer {
         return;
       }
       try {
-        const body = await readJson(request, 256 * 1024);
+        const body = await readJson(request, MAX_TEXT_TURN_BODY_BYTES);
         if (!body || typeof body !== "object") throw new Error("text turn body is invalid");
         if (typeof body.prompt !== "string" || body.prompt.length < 1 || body.prompt.length > 120_000) {
           throw new Error("text turn prompt is invalid");
@@ -129,6 +131,16 @@ class BrowserControlServer {
         if (body.requireRetainedConversation !== undefined
           && typeof body.requireRetainedConversation !== "boolean") {
           throw new Error("text turn retained flag is invalid");
+        }
+        if (body.attachment !== undefined) {
+          const attachment = body.attachment;
+          if (!attachment || typeof attachment !== "object"
+            || typeof attachment.name !== "string" || typeof attachment.text !== "string"
+            || !/^longform-audit--[a-f0-9]{16}\.txt$/.test(attachment.name)
+            || Buffer.byteLength(attachment.text, "utf8") > MAX_TEXT_ATTACHMENT_BYTES
+            || !attachment.name.endsWith(`--${createHash("sha256").update(attachment.text).digest("hex").slice(0, 16)}.txt`)) {
+            throw new Error("text turn attachment is invalid");
+          }
         }
         const host = this.getBrowserHost();
         if (!host) throw new Error("browser host is not ready");

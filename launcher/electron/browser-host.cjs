@@ -3130,7 +3130,7 @@ class BrowserHost {
     return { ok: true, ...evidence };
   }
 
-  async textTurn({ prompt, effort, conversationKey, requireRetainedConversation = false }, signal) {
+  async textTurn({ prompt, effort, conversationKey, requireRetainedConversation = false, attachment }, signal) {
     requireAutomaticBrowserInspection(this, "scoped text turn");
     if (typeof prompt !== "string" || prompt.length < 1 || prompt.length > 120_000) {
       throw new Error("Scoped text prompt is invalid");
@@ -3141,6 +3141,13 @@ class BrowserHost {
     if (!/^[a-f0-9]{64}$/.test(conversationKey)) {
       throw new Error("Scoped text conversation key is invalid");
     }
+    if (attachment !== undefined && (!attachment || typeof attachment !== "object"
+      || typeof attachment.name !== "string" || typeof attachment.text !== "string"
+      || !/^longform-audit--[a-f0-9]{16}\.txt$/.test(attachment.name)
+      || Buffer.byteLength(attachment.text, "utf8") > 5 * 1024 * 1024
+      || !attachment.name.endsWith(`--${createHash("sha256").update(attachment.text).digest("hex").slice(0, 16)}.txt`))) {
+      throw new Error("Scoped text attachment is invalid");
+    }
     await this.waitForSurfaceReady();
     const result = await this.runBrowserHelperOperation({
       helper: this.helper,
@@ -3148,7 +3155,7 @@ class BrowserHost {
       appName: this.connectorName(),
       operation: "text",
       useTemporaryChats: false,
-      payload: { prompt, effort, conversationKey, requireRetainedConversation },
+      payload: { prompt, effort, conversationKey, requireRetainedConversation, ...(attachment ? { attachment } : {}) },
       logger: this.logger,
       signal,
     });

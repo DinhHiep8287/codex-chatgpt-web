@@ -76,6 +76,7 @@ interface TextTurnMessage {
   effort: "low" | "medium" | "high";
   conversationKey: string;
   requireRetainedConversation?: boolean;
+  attachment?: { name: string; text: string };
 }
 
 type MaintenanceMessage = VerifyMessage | InspectMessage | SmokeMessage | LimitsMessage;
@@ -419,6 +420,7 @@ async function textTurn(message: TextTurnMessage): Promise<void> {
   if (!["low", "medium", "high"].includes(message.effort)) {
     throw new Error("Browser helper text effort is invalid");
   }
+  validateSkillFiles(message.attachment ? [message.attachment] : undefined);
   const abortController = new AbortController();
   abortControllers.set(message.id, abortController);
   try {
@@ -430,7 +432,12 @@ async function textTurn(message: TextTurnMessage): Promise<void> {
       localToolsEnabled: false,
     };
     const prompt = message.prompt;
-    const prepared = async () => ({ text: prompt, images: [], release: () => {} });
+    const prepared = async () => ({
+      text: prompt,
+      images: [],
+      ...(message.attachment ? { skillFiles: [message.attachment] } : {}),
+      release: () => {},
+    });
     const response = await worker.run({
       traceId: message.id,
       modelId: CHATGPT_WEB_MODEL_ID,

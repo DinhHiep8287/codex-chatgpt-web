@@ -56,6 +56,34 @@ test("scoped text operation stops its helper when the caller cancels", async (co
   await assert.rejects(pending, /caller stopped/);
 });
 
+test("scoped text operation forwards the bounded audit attachment", async (context) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-browser-helper-attachment-"));
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const script = path.join(root, "helper.cjs");
+  fs.writeFileSync(script, `
+    const input = require("node:readline").createInterface({ input: process.stdin });
+    const send = value => process.stdout.write(JSON.stringify(value) + "\\n");
+    send({ type: "ready" });
+    input.on("line", line => {
+      const message = JSON.parse(line);
+      if (message.type === "shutdown") process.exit(0);
+      if (message.type !== "text") return;
+      if (message.attachment?.text !== "audit payload") process.exit(2);
+      send({ type: "result", id: message.id, value: { text: "ok" } });
+    });
+  `);
+  const result = await runBrowserHelperOperation({
+    helper: { executable: process.execPath, script }, descriptorPath: "/runtime/launcher-browser.json",
+    appName: "Vietsub", operation: "text", useTemporaryChats: false,
+    payload: {
+      prompt: "Audit.", effort: "medium", conversationKey: "a".repeat(64),
+      attachment: { name: "longform-audit--0000000000000000.txt", text: "audit payload" },
+    },
+    logger: { info() {} },
+  });
+  assert.equal(result.value.text, "ok");
+});
+
 test("launcher verification delegates exact connector selection to the browser helper protocol", async (context) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-browser-helper-verify-"));
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
