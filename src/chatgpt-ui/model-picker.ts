@@ -223,9 +223,9 @@ export async function activateChatGptEffortMenu(
 
   const settleMs = options.settleMs ?? 3_000;
   await clearGhostEffortState(page, control);
-  // Let Playwright wait for stable layout and hit testing after navigation.
-  // A forced click can be delivered before the new renderer's viewport is usable.
-  await control.click({ timeout: Math.max(1, settleMs) });
+  // ChatGPT can render this control disabled while the composer finishes hydrating.
+  // Let Playwright wait for it to become actionable; never force a pre-submit click.
+  await control.click({ timeout: Math.max(30_000, settleMs) });
   const clickedSurface = await waitForEffortSurface(page, control, settleMs);
   if (clickedSurface) return { method: "click", ...clickedSurface };
 

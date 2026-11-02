@@ -3,9 +3,26 @@ import { readFileSync } from "node:fs";
 import { chromium } from "playwright-core";
 import { ChatGptBrowserWorker, setChatGptThinkMode } from "../src/adapters/chatgpt-web/browser-worker";
 import { CHATGPT_COMPOSER_SELECTOR } from "../src/chatgpt-ui/composer";
-import { CHATGPT_EFFORT_CONTROL_SELECTOR } from "../src/chatgpt-ui/model-picker";
+import { activateChatGptEffortMenu, CHATGPT_EFFORT_CONTROL_SELECTOR } from "../src/chatgpt-ui/model-picker";
 import { detectChatGptAccountCapabilities } from "../src/chatgpt-session";
 import { assertChatGptModelFamily } from "../src/adapters/chatgpt-web/model-selection";
+
+test.skipIf(!process.env.CHATGPT_DOM_TEST_BROWSER)("effort activation waits for a temporarily disabled control", async () => {
+  const browser = await chromium.launch({ executablePath: process.env.CHATGPT_DOM_TEST_BROWSER, headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`<button id="effort" disabled aria-haspopup="menu" aria-controls="picker" aria-expanded="false">Medium</button>
+      <div id="picker" role="menu" hidden><div role="menuitem">Medium<div data-model-picker-power-slider>
+        <span role="slider" aria-valuemin="0" aria-valuemax="2" aria-valuenow="1"></span>
+      </div></div></div><script>
+        const control=document.querySelector('#effort'),menu=document.querySelector('#picker');
+        control.onclick=()=>{menu.hidden=false;control.setAttribute('aria-expanded','true');};
+        setTimeout(()=>{control.disabled=false;},100);
+      </script>`);
+    const activation = await activateChatGptEffortMenu(page, page.locator("#effort"), { settleMs: 500 });
+    expect(activation.method).toBe("click");
+  } finally { await browser.close(); }
+}, 10_000);
 
 test.skipIf(!process.env.CHATGPT_DOM_TEST_BROWSER)("GPT-5.6 Pro verifies the split model/effort header before Send (#875)", async () => {
   const browser = await chromium.launch({ executablePath: process.env.CHATGPT_DOM_TEST_BROWSER, headless: true });

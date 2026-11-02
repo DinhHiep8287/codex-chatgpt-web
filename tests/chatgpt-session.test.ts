@@ -100,7 +100,7 @@ test("effort activation binds the owned menu after the control opens", async () 
       return null;
     },
     click: async (options: unknown) => {
-      expect(options).toEqual({ timeout: 1 });
+      expect(options).toEqual({ timeout: 30_000 });
       opened = true;
     },
   };
@@ -183,7 +183,7 @@ test("effort activation retries one ghost click with a primary pointerdown", asy
   expect(activation.method).toBe("pointerdown");
   expect(activation.menu).toBe(ownedMenu as never);
   expect(events).toEqual([
-    ["click", { timeout: 1 }],
+    ["click", { timeout: 30_000 }],
     ["keyboard", "Escape"],
     ["pointerdown", { button: 0, buttons: 1, pointerType: "mouse", isPrimary: true }],
   ]);
