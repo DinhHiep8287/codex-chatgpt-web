@@ -14,7 +14,7 @@ test("scoped text capability cannot call launcher-control routes", async (contex
   const host = {
     async textTurn(body) {
       calls.push(body);
-      return { text: "bounded response" };
+      return { text: "bounded response", conversation_url: "https://chatgpt.com/c/12345678-1234-1234-1234-123456789abc" };
     },
   };
   const server = await new BrowserControlServer({
@@ -47,7 +47,10 @@ test("scoped text capability cannot call launcher-control routes", async (contex
       body: JSON.stringify(body),
     });
     assert.equal(accepted.status, 200);
-    assert.deepEqual(await accepted.json(), { ok: true, text: "bounded response" });
+    assert.deepEqual(await accepted.json(), {
+      ok: true, text: "bounded response",
+      conversation_url: "https://chatgpt.com/c/12345678-1234-1234-1234-123456789abc",
+    });
     assert.deepEqual(calls, [body]);
   } finally {
     await server.close();

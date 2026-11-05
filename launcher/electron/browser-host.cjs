@@ -3163,7 +3163,12 @@ class BrowserHost {
     if (typeof text !== "string" || !text.trim()) {
       throw new Error("Browser helper returned an invalid scoped text response");
     }
-    return { text };
+    const conversationUrl = result?.value?.conversation_url;
+    return {
+      text,
+      ...(/^https:\/\/chatgpt\.com\/c\/[a-f0-9-]+$/i.test(conversationUrl ?? "")
+        ? { conversation_url: conversationUrl } : {}),
+    };
   }
 
   async verifyConnector(appName) {

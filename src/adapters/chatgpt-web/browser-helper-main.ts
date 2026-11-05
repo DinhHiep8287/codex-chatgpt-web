@@ -438,6 +438,7 @@ async function textTurn(message: TextTurnMessage): Promise<void> {
       ...(message.attachment ? { skillFiles: [message.attachment] } : {}),
       release: () => {},
     });
+    let conversationUrl = "";
     const response = await worker.run({
       traceId: message.id,
       modelId: CHATGPT_WEB_MODEL_ID,
@@ -451,8 +452,9 @@ async function textTurn(message: TextTurnMessage): Promise<void> {
       conversationKey: message.conversationKey,
       abortSignal: abortController.signal,
       onTextDelta: () => {},
+      onConversationUrl: url => { conversationUrl = url; },
     });
-    writeProtocol({ type: "result", id: message.id, value: { text: response } });
+    writeProtocol({ type: "result", id: message.id, value: { text: response, conversation_url: conversationUrl } });
   } catch (error) {
     writeProtocol({
       type: "error",

@@ -4045,6 +4045,8 @@ test("scoped text turns bind their first tab for retained project conversations"
   expect(textTurn).not.toContain("nativeConnector: true");
   expect(textTurn).toContain("retainConversation: true");
   expect(textTurn).toContain("conversationKey: message.conversationKey");
+  expect(textTurn).toContain("onConversationUrl:");
+  expect(textTurn).toContain("conversation_url: conversationUrl");
 });
 
 test("plain retained turns do not acquire a native connector identity", () => {

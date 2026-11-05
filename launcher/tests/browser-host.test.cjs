@@ -30,6 +30,21 @@ function scriptEvents() {
   return { on: events.on.bind(events), off: events.off.bind(events), isCrashed: () => false };
 }
 
+test("scoped text preserves a real conversation URL and drops untrusted URLs", async () => {
+  const url = "https://chatgpt.com/c/12345678-1234-1234-1234-123456789abc";
+  const host = Object.assign(Object.create(BrowserHost.prototype), {
+    waitForSurfaceReady: async () => {},
+    connectorName: () => "Codex Native2",
+    runBrowserHelperOperation: async () => ({ value: { text: "answer", conversation_url: url } }),
+  });
+  const request = { prompt: "Test", effort: "low", conversationKey: "a".repeat(64) };
+  assert.deepEqual(await host.textTurn(request), { text: "answer", conversation_url: url });
+  for (const invalid of [undefined, "https://evil.example/c/123", "https://chatgpt.com.evil.example/c/123"]) {
+    host.runBrowserHelperOperation = async () => ({ value: { text: "answer", conversation_url: invalid } });
+    assert.deepEqual(await host.textTurn(request), { text: "answer" });
+  }
+});
+
 function primaryLoginFixture() {
   let loads = 0;
   let probes = 0;

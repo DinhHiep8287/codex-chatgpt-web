@@ -1080,6 +1080,7 @@ export interface BrowserTurn {
   onCommentary?: (text: string, continuation?: boolean) => void;
   /** Append-only, structurally stable Markdown chunks. */
   onTextDelta: (delta: string) => void;
+  onConversationUrl?: (url: string) => void;
   /** Proven current-turn MCP activity; never response content or completion. */
   externalProgress?: ChatGptTurnProgressReader;
   /** Atomically fences browser completion against concurrent MCP claims in the turn broker. */
@@ -5794,6 +5795,9 @@ export class ChatGptBrowserWorker {
 
       const finalRejection = await submissionRejection.failure();
       if (finalRejection) throw finalRejection;
+      if (/^https:\/\/chatgpt\.com\/c\/[a-f0-9-]+$/i.test(page.url())) {
+        turn.onConversationUrl?.(page.url());
+      }
       if (this.context && this.config.browserHost === "managed-chrome") {
         const state = await this.context.storageState();
         atomicWriteFile(this.config.storageStatePath, `${JSON.stringify(state)}\n`);
